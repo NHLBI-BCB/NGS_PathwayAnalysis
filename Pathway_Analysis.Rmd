@@ -5,9 +5,23 @@ date: "August 26, 2015"
 output: html_document
 ---
 
-```{r}
+```{r, echo=TRUE, message=FALSE}
 setwd("~/Documents/Bond/Bioinformatics/NGS_PathwayAnalysis")
+source("http://bioconductor.org/biocLite.R")
+biocLite(c("pathview", "edgeR", "gage"))
+library(Biobase)
+library(edgeR)
+library(pathview)
+library(gage)
 ```
+
+```{r}
+rnaseq_URL <- "https://github.com/vsbuffalo/rna-seq-example/raw/master/results/raw-counts.txt"
+download.file(rnaseq_URL, destfile = "rnaseq_data.txt")
+rnaseq_data <- read.table("rnaseq_data.txt",
+                          header=TRUE)
+```
+
 
 
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
