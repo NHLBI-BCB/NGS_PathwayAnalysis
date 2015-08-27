@@ -104,5 +104,157 @@ write.table(rbind(wt_hy_sig_kegg$greater,
             file = "wt_hy_sig_kegg.txt", sep = "\t")
 ```
 
+# Combine GAGE and EdgeR analysis
+
+First, we will do a differential gene expression analysis using the edgeR package.
+
+## 1. Make the study design as follows:
+```{r, echo=TRUE, message=FALSE}
+targets <-
+        data.frame(sample_name=colnames(rnaseq_data),Group=rep(c("WT","hy"),each=2))
+
+targets
+```
+
+## 2. Create DGElist object.
+
+This is a R list object that can be easily manipulated.
+
+```{r, echo=TRUE, message=FALSE}
+d <- DGEList(counts=rnaseq_data, 
+             group=targets$Group) # Constructs DGEList object
+```
+
+## 3. Remove lowly expressed genes
+
+Keep genes with more than 10 counts per million (calculated with cpm()) at least in two samples.
+```{r, echo=TRUE, message=FALSE}
+#before filtering:
+dim(d)
+keep <- rowSums(cpm(d)> 10) >= 2
+d <- d[keep,]
+#after filtering:
+dim(d)
+```
+
+## 4. Normalize the data
+```{r, echo=TRUE, message=FALSE}
+d$samples$lib.size <- colSums(d$counts)
+d <- calcNormFactors(d)
+d
+```
+
+## 5. multidimentioanl scaling plot
+
+Quick sanity check to see how samples are related to each other using multidimensional scaling plot (MSD).
+
+```{r, echo=TRUE, message=FALSE}
+plotMDS(d, labels = targets$Group, 
+        col = c("darkgreen","blue")[factor(targets$Group)])
+```
+
+## 6. Estimate the dispersion
+```{r, echo=TRUE, message=FALSE}
+d1 <- estimateCommonDisp(d, verbose=T)
+
+d1 <- estimateTagwiseDisp(d1)
+
+plotBCV(d1)
+```
+
+## 7. Differentail gene expression
+```{r, echo=TRUE, message=FALSE}
+de.com <- exactTest(d1, pair = c("WT", "hy"))
+topTags(de.com, n = 5)
+
+FDR <- p.adjust(de.com$table$PValue, method="BH")
+de1 <- decideTestsDGE(de.com, adjust.method="BH", p.value=0.05)
+summary(de1)
+```
+
+## 8. Making the data suitable for pathway analysis
+```{r, echo=TRUE, message=FALSE}
+isDE <- as.logical(de1) # covert to DE set to true/false set
+
+DEnames <- rownames(d)[isDE] # get the DE gene names
+edger.fc <- de.com$table$logFC # get the log fold change
+names(edger.fc) <- rownames(de.com$table) # assign row names to fold change 
+exp.fc <- edger.fc
+head(exp.fc)
+
+# Getting DE gene set and fold change
+
+DE_foldchange <- edger.fc[DEnames]
+
+length(DE_foldchange)
+```
+
+## 9. GAGE analysis
+```{r, echo=TRUE, message=FALSE}
+fc.kegg.p <- gage(exp.fc, gsets = kegg.gs, ref = NULL, samp = NULL)
+
+
+head(fc.kegg.p$greater[,1:5], 4)
+
+# Significance test
+
+wt_hy_sig_kegg <-sigGeneSet(fc.kegg.p, outname="wt_hy.kegg")
+```
+
+# Visualize the data using Pathview
+```{r, echo=TRUE, message=FALSE}
+log_fc= norm_counts[, samp_idx]-rowMeans(norm_counts[, ref_idx])
+```
+
+## 1. Selecting the path ids for the upregulated set.
+```{r, echo=TRUE, message=FALSE}
+greater_set <- native_kegg_fc$greater[, "q.val"] < 0.1 &
+        !is.na(native_kegg_fc$greater[, "q.val"])
+greater_ids <- rownames(native_kegg_fc$greater)[greater_set]
+head(greater_ids)
+```
+
+## 2. Selecting path ids for down-regulated set
+```{r, echo=TRUE, message=FALSE}
+less_set <- native_kegg_fc$less[, "q.val"] < 0.1 &
+        !is.na(native_kegg_fc$less[,"q.val"])
+less_ids <- rownames(native_kegg_fc$less)[less_set]
+```
+
+## 3. Combine up and down-regulated path ids.
+```{r, echo=TRUE, message=FALSE}
+combine_ids <- substr(c(greater_ids, less_ids), 1, 8)
+head(combine_ids)
+```
+
+## 4. Visualization
+
+Here we are going to get the first three pathways and visualize using pathview.
+```{r, echo=TRUE, message=FALSE}
+pv.out.list <- sapply(combine_ids[1:3], function(pid) pathview(
+        gene.data =  exp.fc, pathway.id = pid,
+        species = "ath", out.suffix="Wt_hy",
+        gene.idtype="KEGG"))
+```
+
+5. Mapping DE genes to individual pathways
+
+We can map genes that show statistically significant changes to individual pathways. As an example, we can take DNA replication pathway and see which of the DE genes from EdgeR is present.
+
+```{r, echo=TRUE, message=FALSE}
+pv_replication <- pathview(gene.data = DE_foldchange, 
+                           gene.idtype = "KEGG", 
+                           pathway.id = combine_ids[3], 
+                           species = "ath", 
+                           out.suffix = "DNA_replication", 
+                           keys.align = "y", 
+                           kegg.native = T, 
+                           match.data = T, 
+                           key.pos = "topright")
+# See how the output look like.
+
+head(pv_replication)
+```
+
 
 
