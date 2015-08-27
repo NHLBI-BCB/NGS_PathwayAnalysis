@@ -15,27 +15,94 @@ library(pathview)
 library(gage)
 ```
 
-```{r}
+```{r, echo=TRUE, message=FALSE}
 rnaseq_URL <- "https://github.com/vsbuffalo/rna-seq-example/raw/master/results/raw-counts.txt"
 download.file(rnaseq_URL, destfile = "rnaseq_data.txt")
 rnaseq_data <- read.table("rnaseq_data.txt",
                           header=TRUE)
 ```
 
-
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r}
-summary(cars)
+```{r, echo=TRUE, message=FALSE}
+colnames(rnaseq_data) <- c("WT_1", "WT_2", "hy_1", "hy_2")
 ```
 
-You can also embed plots, for example:
-
-```{r, echo=FALSE}
-plot(cars)
+```{r, echo=TRUE, message=FALSE}
+data(korg)
+head(korg)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r, echo=TRUE, message=FALSE}
+org <- "arabidopsis thaliana"
+species <- unlist(sapply(1:ncol(korg), function(i) {
+    agrep(org, korg[, i])
+}))
+korg[species, 1, drop = F]
+```
+
+```{r, echo=TRUE, message=FALSE}
+kegg_arab <- kegg.gsets("ath")
+kegg.gs <- kegg_arab$kg.sets[kegg_arab$sigmet.idx]
+```
+
+
+# GAGE "native" workflow
+
+## 1. Remove zero counts in all samples.
+
+```{r, echo=TRUE, message=FALSE}
+rnaseq_counts <- rnaseq_data # rename the dataset 
+
+dim(rnaseq_counts)
+non_zero <- rowSums(rnaseq_counts) != 0
+rnaseq_counts <- rnaseq_counts[non_zero,]
+# number of genes left after removing zero counts 
+
+dim(rnaseq_counts)
+```
+
+## 2. Normalize library sizes
+
+```{r, echo=TRUE, message=FALSE}
+libsizes <- colSums(rnaseq_counts)
+size_factor <- libsizes / exp(mean(log(libsizes)))
+norm_counts <- t(t(rnaseq_counts) / size_factor)
+range(norm_counts)
+```
+
+## 3. Variance stabilizing transformation
+```{r, echo=TRUE, message=FALSE}
+norm_counts <- log2(norm_counts + 8)
+range(norm_counts)
+```
+
+## 4. Define reference and experiment samples
+```{r, echo=TRUE, message=FALSE}
+ref_idx <- 1:2 #wt
+samp_idx <- 3:4 #hy mutant 
+```
+
+## 5. Enrichment analysis
+```{r, echo=TRUE, message=FALSE}
+native_kegg_fc <- gage(norm_counts, 
+                       gsets = kegg.gs, 
+                       ref = ref_idx, 
+                       samp = samp_idx, 
+                       compare ="unpaired")
+```
+
+```{r, echo=TRUE,}
+head(native_kegg_fc$greater[,1:5], 4)
+head(native_kegg_fc$less[,1:5], 4)
+```
+
+```{r, echo=TRUE, message=FALSE}
+wt_hy_sig_kegg <-sigGeneSet(native_kegg_fc, outname="wt_hy.kegg")
+# Write the significant pathway sets to a text file.
+
+write.table(rbind(wt_hy_sig_kegg$greater,
+                  wt_hy_sig_kegg$less), 
+            file = "wt_hy_sig_kegg.txt", sep = "\t")
+```
+
+
+
